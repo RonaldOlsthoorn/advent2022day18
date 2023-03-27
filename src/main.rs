@@ -2,9 +2,7 @@
 use std::{io::{BufReader, BufRead}, fs::File, collections::{VecDeque, HashMap, HashSet}, num};
 use regex::Regex;
 
-const BACKSPACE: char = 8u8 as char;
-
-const MaxTime: u8 = 24;
+const MaxTime: u16 = 32;
 
 #[derive(Debug, Clone, PartialEq)]
 enum Decision {
@@ -17,45 +15,47 @@ enum Decision {
 
 #[derive(Debug)]
 struct Blueprint {
-    cost_ore_robot: u8,
-    cost_clay_robot: u8,
-    cost_obsidian_robot: (u8, u8),
-    cost_geode_robot: (u8, u8)
+    cost_ore_robot: u16,
+    cost_clay_robot: u16,
+    cost_obsidian_robot: (u16, u16),
+    cost_geode_robot: (u16, u16)
 }
 
 #[derive(Debug, Clone)]
 struct StockPile {
-    ore: u8,
-    clay: u8,
-    obsidian: u8,
-    geode: u8
+    ore: u16,
+    clay: u16,
+    obsidian: u16,
+    geode: u16
 }
 
 #[derive(Debug, Clone)]
 struct WorkForce {
-    ore_robots: u8,
-    clay_robots: u8,
-    obsidian_robots: u8,
-    geode_robots: u8
+    ore_robots: u16,
+    clay_robots: u16,
+    obsidian_robots: u16,
+    geode_robots: u16
 }
 
 #[derive(Debug, Clone)]
 struct WalkState {
-    time: u8,
+    time: u16,
     stockpile: StockPile,
     workforce: WorkForce
 }
 
-fn simulate(blueprint: &Blueprint) -> u8 {
+fn simulate(blueprint: &Blueprint) -> u16 {
+
+    let inffeasiblity_filter = InfeasibilityFilter::new(200);
 
     let stockpile = StockPile{ore: 0, clay: 0, obsidian: 0, geode: 0};
     let workforce = WorkForce{ore_robots: 1, clay_robots: 0, obsidian_robots: 0, geode_robots: 0};
-    let time: u8 = 0;
+    let time: u16 = 0;
 
     let init_state = WalkState { time: time, stockpile, workforce };
     let initial_options = calculate_next_decision_point(&init_state, &blueprint);
 
-    let mut Q: VecDeque<(WalkState, u8, Decision)>  = VecDeque::new();
+    let mut Q: VecDeque<(WalkState, u16, Decision)>  = VecDeque::new();
 
     for o in initial_options {
         Q.push_back((init_state.clone(), o.0, o.1));
@@ -68,6 +68,10 @@ fn simulate(blueprint: &Blueprint) -> u8 {
         let (previous_state, time_delta, decission) = Q.pop_front().unwrap();
 
         let current_state = tick(previous_state, time_delta, decission, blueprint);
+
+        if inffeasiblity_filter.purge_infeasible(&current_state, best_result) {
+            continue;
+        }
 
         let options = calculate_next_decision_point(&current_state, &blueprint);
 
@@ -89,7 +93,7 @@ fn simulate(blueprint: &Blueprint) -> u8 {
     best_result
 }
 
-fn tick(previous_state: WalkState, time_delta: u8, decission: Decision, blueprint: &Blueprint) -> WalkState {
+fn tick(previous_state: WalkState, time_delta: u16, decission: Decision, blueprint: &Blueprint) -> WalkState {
 
     let mut current_state = previous_state.clone();
 
@@ -157,7 +161,7 @@ fn tick(previous_state: WalkState, time_delta: u8, decission: Decision, blueprin
 
 }
 
-fn calculate_next_decision_point(walkstate: &WalkState, blueprint: &Blueprint) -> Vec<(u8, Decision)> {
+fn calculate_next_decision_point(walkstate: &WalkState, blueprint: &Blueprint) -> Vec<(u16, Decision)> {
 
     let mut decissions = Vec::new();
     let mut time_delta = 0;
@@ -166,7 +170,7 @@ fn calculate_next_decision_point(walkstate: &WalkState, blueprint: &Blueprint) -
     if walkstate.stockpile.ore < blueprint.cost_ore_robot {
 
         let mut f = (blueprint.cost_ore_robot - walkstate.stockpile.ore) / walkstate.workforce.ore_robots;
-        f += ((blueprint.cost_ore_robot - walkstate.stockpile.ore) % walkstate.workforce.ore_robots > 0) as u8;
+        f += ((blueprint.cost_ore_robot - walkstate.stockpile.ore) % walkstate.workforce.ore_robots > 0) as u16;
 
         time_delta = f;
         novel_decissions.push((f, Decision::BuildOreRobot));
@@ -177,7 +181,7 @@ fn calculate_next_decision_point(walkstate: &WalkState, blueprint: &Blueprint) -
     if walkstate.stockpile.ore < blueprint.cost_clay_robot {
 
         let mut f = (blueprint.cost_clay_robot - walkstate.stockpile.ore) / walkstate.workforce.ore_robots;
-        f += ((blueprint.cost_clay_robot - walkstate.stockpile.ore) % walkstate.workforce.ore_robots > 0) as u8;
+        f += ((blueprint.cost_clay_robot - walkstate.stockpile.ore) % walkstate.workforce.ore_robots > 0) as u16;
 
         novel_decissions.push((f, Decision::BuildClayRobot));
 
@@ -193,12 +197,12 @@ fn calculate_next_decision_point(walkstate: &WalkState, blueprint: &Blueprint) -
     
             if walkstate.stockpile.ore < blueprint.cost_obsidian_robot.0 {
                 f = (blueprint.cost_obsidian_robot.0 - walkstate.stockpile.ore) / walkstate.workforce.ore_robots;
-                f += ((blueprint.cost_obsidian_robot.0 - walkstate.stockpile.ore) % walkstate.workforce.ore_robots > 0) as u8;
+                f += ((blueprint.cost_obsidian_robot.0 - walkstate.stockpile.ore) % walkstate.workforce.ore_robots > 0) as u16;
             }
     
             if walkstate.stockpile.clay < blueprint.cost_obsidian_robot.1 {
                 g = (blueprint.cost_obsidian_robot.1 - walkstate.stockpile.clay) / walkstate.workforce.clay_robots;
-                g += ((blueprint.cost_obsidian_robot.1 - walkstate.stockpile.clay) % walkstate.workforce.clay_robots > 0) as u8;
+                g += ((blueprint.cost_obsidian_robot.1 - walkstate.stockpile.clay) % walkstate.workforce.clay_robots > 0) as u16;
             }
     
             let h = std::cmp::max(f,g);
@@ -217,12 +221,12 @@ fn calculate_next_decision_point(walkstate: &WalkState, blueprint: &Blueprint) -
     
             if walkstate.stockpile.ore < blueprint.cost_geode_robot.0 {
                 f = (blueprint.cost_geode_robot.0 - walkstate.stockpile.ore) / walkstate.workforce.ore_robots;
-                f += ((blueprint.cost_geode_robot.0 - walkstate.stockpile.ore) % walkstate.workforce.ore_robots > 0) as u8;
+                f += ((blueprint.cost_geode_robot.0 - walkstate.stockpile.ore) % walkstate.workforce.ore_robots > 0) as u16;
             }
     
             if walkstate.stockpile.obsidian < blueprint.cost_geode_robot.1 {
                 g = (blueprint.cost_geode_robot.1 - walkstate.stockpile.obsidian) / walkstate.workforce.obsidian_robots;
-                g += ((blueprint.cost_geode_robot.1 - walkstate.stockpile.obsidian) % walkstate.workforce.obsidian_robots > 0) as u8;
+                g += ((blueprint.cost_geode_robot.1 - walkstate.stockpile.obsidian) % walkstate.workforce.obsidian_robots > 0) as u16;
             }
     
             let h = std::cmp::max(f,g);
@@ -240,6 +244,45 @@ fn calculate_next_decision_point(walkstate: &WalkState, blueprint: &Blueprint) -
     return decissions;
 }
 
+struct InfeasibilityFilter {
+
+    geode_series: Vec<(u16, u16)>
+}
+
+impl InfeasibilityFilter {
+
+    fn new(size: u16) -> Self {
+
+        let mut series = vec![];
+        let mut prev = (0, 0);
+
+        for i in 0..size {
+
+            let curr = (i, prev.0 + prev.1);
+            prev = curr;
+            series.push(curr);
+
+        }
+
+        Self{geode_series: series}
+    }   
+
+    fn purge_infeasible(self: &Self, walkstate: &WalkState, best_candidate: u16) -> bool {
+
+        let geodic_robots = walkstate.workforce.geode_robots;
+        let geode = walkstate.stockpile.geode;
+
+        let start_series = self.geode_series[geodic_robots as usize];
+        let end_series = self.geode_series[geodic_robots as usize + walkstate.time as usize];
+
+        let lower_bound = end_series.1 - start_series.1 + geode;
+
+        best_candidate > lower_bound
+    }
+}
+
+
+
 fn main() {
 
     let reader = BufReader::new(File::open("input.txt").unwrap());
@@ -250,9 +293,9 @@ fn main() {
 
     for line in reader.lines().map(|l| l.unwrap()) {
 
-        let numbers: Vec<u8> = re.captures_iter(
+        let numbers: Vec<u16> = re.captures_iter(
             line.as_str()).next().unwrap().iter().map(
-                |cap| cap.unwrap().parse::<u8>().unwrap_or(0)).collect();
+                |cap| cap.unwrap().parse::<u16>().unwrap_or(0)).collect();
 
         let b = Blueprint{
             cost_ore_robot: numbers[2],
@@ -263,12 +306,12 @@ fn main() {
         blueprints.push(b);
     }
 
-    let mut res = 0;
+    let mut res = 1;
 
-    for (i, blueprint) in blueprints.iter().enumerate() {
+    for (i, blueprint) in blueprints[0..3].iter().enumerate() {
         println!("blueprint {} {:?}", i, blueprint);
 
-        res += (i + 1) * simulate(blueprint) as usize;
+        res *= simulate(blueprint) as usize;
     }
 
     println!("final quantity {}", res);
