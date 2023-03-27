@@ -273,7 +273,7 @@ impl InfeasibilityFilter {
         let geode = walkstate.stockpile.geode;
 
         let start_series = self.geode_series[geodic_robots as usize];
-        let end_series = self.geode_series[geodic_robots as usize + walkstate.time as usize];
+        let end_series = self.geode_series[geodic_robots as usize + (MaxTime - walkstate.time) as usize];
 
         let lower_bound = end_series.1 - start_series.1 + geode;
 
